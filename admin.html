@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>إدارة الطلبات - الفاخر</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <style>
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #f3f4f6;
+      color: #111827;
+    }
+
+    header {
+      background: #111827;
+      color: white;
+      padding: 18px;
+      text-align: center;
+    }
+
+    header h1 {
+      margin: 0;
+      font-size: 24px;
+    }
+
+    .container {
+      max-width: 1100px;
+      margin: auto;
+      padding: 15px;
+    }
+
+    .card {
+      background: white;
+      border-radius: 14px;
+      padding: 20px;
+      margin-bottom: 15px;
+      box-shadow: 0 3px 12px rgba(0,0,0,.08);
+    }
+
+    input, button, select {
+      width: 100%;
+      padding: 13px;
+      margin-top: 10px;
+      border-radius: 9px;
+      border: 1px solid #d1d5db;
+      font-size: 16px;
+    }
+
+    button {
+      background: #111827;
+      color: white;
+      border: none;
+      cursor: pointer;
+    }
+
+    button:hover {
+      opacity: .9;
+    }
+
+    .logout {
+      background: #dc2626;
+    }
+
+    .refresh {
+      background: #2563eb;
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    .error {
+      color: #dc2626;
+      margin-top: 10px;
+    }
+
+    .success {
+      color: #16a34a;
+      margin-top: 10px;
+    }
+
+    .order {
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      padding: 15px;
+      margin-bottom: 15px;
+      background: #fff;
+    }
+
+    .order-header {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+    }
+
+    .table-number {
+      font-size: 22px;
+      font-weight: bold;
+    }
+
+    .time {
+      color: #6b7280;
+      font-size: 14px;
+    }
+
+    .items {
+      background: #f9fafb;
+      border-radius: 10px;
+      padding: 10px;
+      margin: 10px 0;
+    }
+
+    .item {
+      display: flex;
+      justify-content: space-between;
+      border-bottom: 1px solid #e5e7eb;
+      padding: 8px 0;
+    }
+
+    .item:last-child {
+      border-bottom: none;
+    }
+
+    .total {
+      font-size: 20px;
+      font-weight: bold;
+      margin-top: 10px;
+    }
+
+    .status-new { color: #dc2626; font-weight: bold; }
+    .status-preparing { color: #d97706; font-weight: bold; }
+    .status-ready { color: #2563eb; font-weight: bold; }
+    .status-completed { color: #16a34a; font-weight: bold; }
+    .status-cancelled { color: #6b7280; font-weight: bold; }
+
+    .top-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    @media (max-width: 600px) {
+      .top-actions {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+<header>
+  <h1>☕ الفاخر - إدارة الطلبات</h1>
+</header>
+
+<div class="container">
+
+  <!-- تسجيل الدخول -->
+  <div id="loginBox" class="card">
+    <h2>تسجيل دخول الإدارة</h2>
+
+    <input
+      id="email"
+      type="email"
+      placeholder="البريد الإلكتروني"
+      autocomplete="email"
+    >
+
+    <input
+      id="password"
+      type="password"
+      placeholder="كلمة المرور"
+      autocomplete="current-password"
+    >
+
+    <button onclick="login()">دخول الإدارة</button>
+
+    <div id="loginError" class="error"></div>
+  </div>
+
+  <!-- لوحة الإدارة -->
+  <div id="adminBox" class="hidden">
+
+    <div class="card">
+      <div class="top-actions">
+        <button class="refresh" onclick="loadOrders()">
+          🔄 تحديث الطلبات
+        </button>
+
+        <button class="logout" onclick="logout()">
+          🚪 تسجيل الخروج
+        </button>
+      </div>
+
+      <select id="filterStatus" onchange="renderOrders()">
+        <option value="all">كل الطلبات</option>
+        <option value="new">طلبات جديدة</option>
+        <option value="preparing">قيد التحضير</option>
+        <option value="ready">جاهزة</option>
+        <option value="completed">مكتملة</option>
+        <option value="cancelled">ملغاة</option>
+      </select>
+    </div>
+
+    <div id="orders"></div>
+
+  </div>
+
+</div>
+
+<script>
+  const SUPABASE_URL = "https://bsnoaqszlwbgshoitusj.supabase.co";
+
+  const SUPABASE_KEY =
+    "sb_publishable_8mTKULa4xARVJrVFVQF1mA_NRsmpOJB";
+
+  const CAFE_ID =
+    "4c412000-c442-438f-b4fc-248fe5bdae23";
+
+  const supabaseClient =
+    window.supabase.createClient(
+      SUPABASE_URL,
+      SUPABASE_KEY
+    );
+
+  let allOrders = [];
+
+  async function login() {
+
+    const email =
+      document.getElementById("email").value.trim();
+
+    const password =
+      document.getElementById("password").value;
+
+    const errorBox =
+      document.getElementById("loginError");
+
+    errorBox.textContent = "";
+
+    if (!email || !password) {
+      errorBox.textContent =
+        "أدخل البريد الإلكتروني وكلمة المرور";
+      return;
+    }
+
+    const { data, error } =
+      await supabaseClient.auth.signInWithPassword({
+        email,
+        password
+      });
+
+    if (error) {
+      errorBox.textContent =
+        "فشل تسجيل الدخول: " + error.message;
+      return;
+    }
+
+    if (data.session) {
+      showAdmin();
+      loadOrders();
+    }
+  }
+
+  async function logout() {
+
+    await supabaseClient.auth.signOut();
+
+    document
+      .getElementById("adminBox")
+      .classList.add("hidden");
+
+    document
+      .getElementById("loginBox")
+      .classList.remove("hidden");
+  }
+
+  function showAdmin() {
+
+    document
+      .getElementById("loginBox")
+      .classList.add("hidden");
+
+    document
+      .getElementById("adminBox")
+      .classList.remove("hidden");
+  }
+
+  async function checkSession() {
+
+    const { data } =
+      await supabaseClient.auth.getSession();
+
+    if (data.session) {
+      showAdmin();
+      loadOrders();
+    }
+  }
+
+  async function loadOrders() {
+
+    const box =
+      document.getElementById("orders");
+
+    box.innerHTML =
+      '<div class="card">جاري تحميل الطلبات...</div>';
+
+    const {
+      data: orders,
+      error
+    } = await supabaseClient
+      .from("orders")
+      .select("*")
+      .eq("cafe_id", CAFE_ID)
+      .order("created_at", {
+        ascending: false
+      });
+
+    if (error) {
+      box.innerHTML =
+        '<div class="card error">حدث خطأ: ' +
+        escapeHtml(error.message) +
+        '</div>';
+      return;
+    }
+
+    allOrders = orders || [];
+
+    if (allOrders.length === 0) {
+      box.innerHTML =
+        '<div class="card">لا توجد طلبات حالياً.</div>';
+      return;
+    }
+
+    const orderIds =
+      allOrders.map(order => order.id);
+
+    const {
+      data: items,
+      error: itemsError
+    } = await supabaseClient
+      .from("order_items")
+      .select("*")
+      .in("order_id", orderIds);
+
+    if (itemsError) {
+      box.innerHTML =
+        '<div class="card error">حدث خطأ في تحميل تفاصيل الطلبات.</div>';
+      return;
+    }
+
+    allOrders =
+      allOrders.map(order => ({
+        ...order,
+        items:
+          (items || []).filter(
+            item => item.order_id === order.id
+          )
+      }));
+
+    renderOrders();
+  }
+
+  function renderOrders() {
+
+    const box =
+      document.getElementById("orders");
+
+    const filter =
+      document.getElementById("filterStatus").value;
+
+    let orders = allOrders;
+
+    if (filter !== "all") {
+      orders =
+        allOrders.filter(
+          order => order.status === filter
+        );
+    }
+
+    if (orders.length === 0) {
+      box.innerHTML =
+        '<div class="card">لا توجد طلبات بهذا التصنيف.</div>';
+      return;
+    }
+
+    box.innerHTML =
+      orders.map(order => {
+
+        const itemsHtml =
+          order.items.map(item => `
+            <div class="item">
+              <span>
+                ${escapeHtml(item.item_name)}
+                × ${item.quantity}
+              </span>
+
+              <span>
+                ${Number(item.subtotal || item.unit_price * item.quantity).toLocaleString("en-US")} د.ع
+              </span>
+            </div>
+          `).join("");
+
+        return `
+          <div class="order">
+
+            <div class="order-header">
+
+              <div>
+                <div class="table-number">
+                  🪑 طاولة ${escapeHtml(order.table_number)}
+                </div>
+
+                <div class="time">
+                  ${formatDate(order.created_at)}
+                </div>
+              </div>
+
+              <div>
+                <select
+                  onchange="changeStatus('${order.id}', this.value)"
+                >
+
+                  <option value="new"
+                    ${order.status === "new" ? "selected" : ""}>
+                    🆕 جديد
+                  </option>
+
+                  <option value="preparing"
+                    ${order.status === "preparing" ? "selected" : ""}>
+                    👨‍🍳 قيد التحضير
+                  </option>
+
+                  <option value="ready"
+                    ${order.status === "ready" ? "selected" : ""}>
+                    ✅ جاهز
+                  </option>
+
+                  <option value="completed"
+                    ${order.status === "completed" ? "selected" : ""}>
+                    ✔️ مكتمل
+                  </option>
+
+                  <option value="cancelled"
+                    ${order.status === "cancelled" ? "selected" : ""}>
+                    ❌ ملغى
+                  </option>
+
+                </select>
+              </div>
+
+            </div>
+
+            <div class="items">
+              ${itemsHtml || "لا توجد تفاصيل"}
+            </div>
+
+            <div class="total">
+              المجموع:
+              ${Number(order.total).toLocaleString("en-US")}
+              د.ع
+            </div>
+
+            <div style="margin-top:8px">
+              الحالة:
+              <span class="${statusClass(order.status)}">
+                ${statusText(order.status)}
+              </span>
+            </div>
+
+          </div>
+        `;
+
+      }).join("");
+  }
+
+  async function changeStatus(orderId, newStatus) {
+
+    const {
+      error
+    } = await supabaseClient
+      .from("orders")
+      .update({
+        status: newStatus,
+        updated_at: new Date().toISOString()
+      })
+      .eq("id", orderId)
+      .eq("cafe_id", CAFE_ID);
+
+    if (error) {
+      alert(
+        "لم يتم تغيير الحالة: " +
+        error.message
+      );
+      await loadOrders();
+      return;
+    }
+
+    const order =
+      allOrders.find(
+        item => item.id === orderId
+      );
+
+    if (order) {
+      order.status = newStatus;
+    }
+
+    renderOrders();
+  }
+
+  function statusText(status) {
+
+    const names = {
+      new: "جديد",
+      preparing: "قيد التحضير",
+      ready: "جاهز",
+      completed: "مكتمل",
+      cancelled: "ملغى"
+    };
+
+    return names[status] || status;
+  }
+
+  function statusClass(status) {
+
+    return {
+      new: "status-new",
+      preparing: "status-preparing",
+      ready: "status-ready",
+      completed: "status-completed",
+      cancelled: "status-cancelled"
+    }[status] || "";
+  }
+
+  function formatDate(date) {
+
+    return new Date(date).toLocaleString(
+      "ar-IQ",
+      {
+        dateStyle: "medium",
+        timeStyle: "short"
+      }
+    );
+  }
+
+  function escapeHtml(value) {
+
+    return String(value ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  }
+
+  checkSession();
+
+  // تحديث تلقائي كل 10 ثواني
+  setInterval(() => {
+
+    supabaseClient.auth.getSession()
+      .then(({ data }) => {
+
+        if (data.session) {
+          loadOrders();
+        }
+
+      });
+
+  }, 10000);
+
+</script>
+
+</body>
+</html>
