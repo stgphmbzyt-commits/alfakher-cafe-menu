@@ -1,0 +1,634 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>الفاخر - الطلب</title>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+<style>
+*{
+box-sizing:border-box;
+}
+
+body{
+margin:0;
+font-family:Arial,sans-serif;
+background:#f5f1eb;
+color:#24170f;
+}
+
+header{
+background:#24170f;
+color:white;
+text-align:center;
+padding:25px 15px;
+}
+
+header h1{
+margin:0 0 8px;
+}
+
+.container{
+max-width:720px;
+margin:auto;
+padding:15px;
+}
+
+.card{
+background:white;
+border-radius:16px;
+padding:15px;
+margin:12px 0;
+box-shadow:0 3px 12px rgba(0,0,0,.08);
+}
+
+.item{
+display:flex;
+justify-content:space-between;
+align-items:center;
+gap:12px;
+}
+
+.item h3{
+margin:0 0 7px;
+}
+
+.price{
+font-weight:bold;
+color:#754522;
+}
+
+button,
+select{
+border:0;
+border-radius:10px;
+padding:11px 14px;
+font-size:16px;
+}
+
+button{
+background:#754522;
+color:white;
+cursor:pointer;
+}
+
+button:disabled{
+opacity:.6;
+}
+
+select{
+width:100%;
+background:#fafafa;
+border:1px solid #ddd;
+}
+
+.qty{
+display:flex;
+align-items:center;
+gap:8px;
+}
+
+.qty button{
+padding:6px 11px;
+}
+
+#message{
+margin-top:15px;
+font-weight:bold;
+text-align:center;
+}
+</style>
+</head>
+
+<body>
+
+<header>
+<h1>الفاخر</h1>
+<div>قائمة الطلب</div>
+</header>
+
+<div class="container">
+
+<div id="menu">
+جاري تحميل القائمة...
+</div>
+
+<div class="card">
+
+<h2>🛒 طلبك</h2>
+
+<div id="cartItems">
+السلة فارغة
+</div>
+
+<p>
+<strong>
+المجموع:
+<span id="total">0</span>
+دينار
+</strong>
+</p>
+
+<label>
+رقم الطاولة
+</label>
+
+<select id="tableNumber">
+<option value="">اختر رقم الطاولة</option>
+</select>
+
+<br><br>
+
+<button id="sendBtn" onclick="sendOrder()">
+إرسال الطلب
+</button>
+
+<div id="message"></div>
+
+</div>
+
+</div>
+
+<script>
+
+const SUPABASE_URL =
+"https://bsnoaqszlwbgshoitusj.supabase.co";
+
+const SUPABASE_KEY =
+"sb_publishable_8mTKULa4xARVJrVFVQF1mA_NRsmpOJB";
+
+const CAFE_ID =
+"4c412000-c442-438f-b4fc-248fe5bdae23";
+
+const supabaseClient =
+window.supabase.createClient(
+SUPABASE_URL,
+SUPABASE_KEY
+);
+
+let cart = [];
+let menuItems = [];
+
+
+/* الطاولات 1 - 40 */
+
+for(let i = 1; i <= 40; i++){
+
+document
+.getElementById("tableNumber")
+.insertAdjacentHTML(
+"beforeend",
+`<option value="${i}">طاولة ${i}</option>`
+);
+
+}
+
+
+/* حماية عرض النص */
+
+function escapeHtml(value){
+
+return String(value ?? "")
+.replace(/[&<>"']/g,function(char){
+
+return {
+"&":"&amp;",
+"<":"&lt;",
+">":"&gt;",
+'"':"&quot;",
+"'":"&#039;"
+
+}[char];
+
+});
+
+}
+
+
+/* تحميل القائمة */
+
+async function loadMenu(){
+
+const { data, error } =
+await supabaseClient
+.from("menu_items")
+.select(
+"id,name,price,description,category_id"
+)
+.eq("cafe_id",CAFE_ID)
+.eq("is_available",true)
+.order("sort_order",{ascending:true});
+
+
+if(error){
+
+console.error(error);
+
+document.getElementById("menu").innerHTML =
+'<div class="card">تعذر تحميل القائمة</div>';
+
+return;
+
+}
+
+
+menuItems = data || [];
+
+renderMenu();
+
+}
+
+
+/* عرض الأصناف */
+
+function renderMenu(){
+
+const box =
+document.getElementById("menu");
+
+
+if(!menuItems.length){
+
+box.innerHTML =
+'<div class="card">لا توجد أصناف متاحة حالياً</div>';
+
+return;
+
+}
+
+
+box.innerHTML =
+menuItems.map(function(item){
+
+return `
+
+<div class="card item">
+
+<div>
+
+<h3>
+${escapeHtml(item.name)}
+</h3>
+
+${
+item.description
+?
+`<div>${escapeHtml(item.description)}</div>`
+:
+""
+}
+
+<div class="price">
+
+${Number(item.price || 0)
+.toLocaleString("ar-IQ")}
+
+دينار
+
+</div>
+
+</div>
+
+<button onclick="addToCart('${item.id}')">
+
+إضافة
+
+</button>
+
+</div>
+
+`;
+
+}).join("");
+
+}
+
+
+/* إضافة للسلة */
+
+function addToCart(id){
+
+const item =
+menuItems.find(function(x){
+
+return x.id === id;
+
+});
+
+
+if(!item)return;
+
+
+const existing =
+cart.find(function(x){
+
+return x.id === id;
+
+});
+
+
+if(existing){
+
+existing.quantity++;
+
+}else{
+
+cart.push({
+
+id:item.id,
+
+name:item.name,
+
+price:Number(item.price) || 0,
+
+quantity:1
+
+});
+
+}
+
+
+renderCart();
+
+}
+
+
+/* زيادة / نقصان الكمية */
+
+function changeQty(id,delta){
+
+const item =
+cart.find(function(x){
+
+return x.id === id;
+
+});
+
+
+if(!item)return;
+
+
+item.quantity += delta;
+
+
+if(item.quantity <= 0){
+
+cart =
+cart.filter(function(x){
+
+return x.id !== id;
+
+});
+
+}
+
+
+renderCart();
+
+}
+
+
+/* عرض السلة */
+
+function renderCart(){
+
+const box =
+document.getElementById("cartItems");
+
+
+if(!cart.length){
+
+box.innerHTML =
+"السلة فارغة";
+
+document.getElementById("total")
+.textContent = "0";
+
+return;
+
+}
+
+
+box.innerHTML =
+cart.map(function(item){
+
+return `
+
+<div class="card item">
+
+<div>
+
+<strong>
+${escapeHtml(item.name)}
+</strong>
+
+<br>
+
+${item.price.toLocaleString("ar-IQ")}
+
+×
+
+${item.quantity}
+
+</div>
+
+
+<div class="qty">
+
+<button
+onclick="changeQty('${item.id}',1)"
+>
++
+</button>
+
+<span>
+${item.quantity}
+</span>
+
+<button
+onclick="changeQty('${item.id}',-1)"
+>
+−
+</button>
+
+</div>
+
+</div>
+
+`;
+
+}).join("");
+
+
+const total =
+cart.reduce(function(sum,item){
+
+return sum +
+(item.price * item.quantity);
+
+},0);
+
+
+document.getElementById("total")
+.textContent =
+total.toLocaleString("ar-IQ");
+
+}
+
+
+/* إرسال الطلب */
+
+async function sendOrder(){
+
+const message =
+document.getElementById("message");
+
+const button =
+document.getElementById("sendBtn");
+
+const tableNumber =
+document.getElementById("tableNumber").value;
+
+
+if(!cart.length){
+
+message.textContent =
+"أضف صنفاً واحداً على الأقل";
+
+return;
+
+}
+
+
+if(!tableNumber){
+
+message.textContent =
+"اختار رقم الطاولة أولاً";
+
+return;
+
+}
+
+
+const total =
+cart.reduce(function(sum,item){
+
+return sum +
+(item.price * item.quantity);
+
+},0);
+
+
+const items =
+cart.map(function(item){
+
+return {
+
+menu_item_id:item.id,
+
+item_name:item.name,
+
+price:item.price,
+
+quantity:item.quantity
+
+};
+
+});
+
+
+button.disabled = true;
+
+button.textContent =
+"جاري إرسال الطلب...";
+
+message.textContent = "";
+
+
+try{
+
+const { data, error } =
+await supabaseClient.rpc(
+"create_cafe_order",
+{
+
+p_cafe_id:CAFE_ID,
+
+p_table_number:Number(tableNumber),
+
+p_total:total,
+
+p_items:items
+
+}
+);
+
+
+if(error){
+
+console.error(
+"ORDER ERROR:",
+error
+);
+
+message.textContent =
+"تعذر إرسال الطلب";
+
+button.disabled = false;
+
+button.textContent =
+"إرسال الطلب";
+
+return;
+
+}
+
+
+/* نجاح */
+
+cart = [];
+
+renderCart();
+
+document.getElementById(
+"tableNumber"
+).value = "";
+
+
+message.textContent =
+"✅ تم إرسال الطلب بنجاح";
+
+
+button.textContent =
+"تم الإرسال";
+
+}
+catch(error){
+
+console.error(error);
+
+message.textContent =
+"تعذر إرسال الطلب";
+
+button.disabled = false;
+
+button.textContent =
+"إرسال الطلب";
+
+}
+
+}
+
+
+/* تشغيل */
+
+loadMenu();
+
+renderCart();
+
+</script>
+
+</body>
+</html>
