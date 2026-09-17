@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>إدارة المنيو - الفاخر</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial;background:#f3f4f6;color:#111}
+header{background:#111827;color:#fff;padding:18px;text-align:center}
+.container{max-width:900px;margin:auto;padding:15px}
+.card{background:#fff;padding:18px;border-radius:14px;margin-bottom:15px;box-shadow:0 2px 10px #ddd}
+input,button{width:100%;padding:13px;margin:6px 0;border-radius:8px;border:1px solid #ddd;font-size:16px}
+button{background:#111827;color:#fff;border:0}
+.green{background:#16a34a}.red{background:#dc2626}.blue{background:#2563eb}
+.hidden{display:none}
+.item{background:#fff;border:1px solid #ddd;border-radius:12px;padding:15px;margin:10px 0}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.error{color:#dc2626}.success{color:#16a34a}
+</style>
+</head>
+
+<body>
+
+<header>
+<h1>☕ الفاخر</h1>
+<p>إدارة المنيو</p>
+</header>
+
+<div class="container">
+
+<div id="loginBox" class="card">
+<h2>🔐 دخول الإدارة</h2>
+<input id="email" type="email" placeholder="البريد الإلكتروني">
+<input id="password" type="password" placeholder="كلمة المرور">
+<button onclick="login()">دخول</button>
+<p id="loginError" class="error"></p>
+</div>
+
+<div id="panel" class="hidden">
+
+<div class="card">
+<h2>➕ إضافة صنف</h2>
+
+<input id="name" placeholder="اسم الصنف">
+<input id="price" type="number" placeholder="السعر">
+<input id="description" placeholder="الوصف">
+
+<button class="green" onclick="addItem()">حفظ الصنف</button>
+
+<p id="message"></p>
+</div>
+
+<div class="card">
+<h2>📋 الأصناف</h2>
+<button class="blue" onclick="loadItems()">🔄 تحديث</button>
+<div id="items">جاري التحميل...</div>
+</div>
+
+<button class="red" onclick="logout()">🚪 تسجيل الخروج</button>
+
+</div>
+</div>
+
+<script>
+
+const SUPABASE_URL="https://bsnoaqszlwbgshoitusj.supabase.co";
+
+const SUPABASE_KEY="sb_publishable_8mTKULa4xARVJrVFVQF1mA_NRsmpOJB";
+
+const CAFE_ID="4c412000-c442-438f-b4fc-248fe5bdae23";
+
+const db=supabase.createClient(
+SUPABASE_URL,
+SUPABASE_KEY
+);
+
+let items=[];
+
+async function login(){
+
+const email=document.getElementById("email").value.trim();
+
+const password=document.getElementById("password").value;
+
+const {data,error}=await db.auth.signInWithPassword({
+email,password
+});
+
+if(error){
+document.getElementById("loginError").textContent=
+"خطأ: "+error.message;
+return;
+}
+
+if(data.session){
+
+document.getElementById("loginBox").classList.add("hidden");
+
+document.getElementById("panel").classList.remove("hidden");
+
+loadItems();
+}
+}
+
+async function logout(){
+
+await db.auth.signOut();
+
+location.reload();
+
+}
+
+async function checkLogin(){
+
+const {data}=await db.auth.getSession();
+
+if(data.session){
+
+document.getElementById("loginBox").classList.add("hidden");
+
+document.getElementById("panel").classList.remove("hidden");
+
+loadItems();
+
+}
+}
+
+async function loadItems(){
+
+const box=document.getElementById("items");
+
+box.innerHTML="جاري التحميل...";
+
+const {data,error}=await db
+.from("menu_items")
+.select("*")
+.eq("cafe_id",CAFE_ID)
+.order("name");
+
+if(error){
+
+box.innerHTML=
+'<p class="error">'+error.message+'</p>';
+
+return;
+}
+
+items=data||[];
+
+if(!items.length){
+
+box.innerHTML="لا توجد أصناف حالياً.";
+
+return;
+}
+
+box.innerHTML=items.map(item=>`
+
+<div class="item">
+
+<h3>${esc(item.name)}</h3>
+
+<p>
+💰 السعر:
+${Number(item.price).toLocaleString("en-US")} د.ع
+</p>
+
+<p>
+${item.description?
+"📝 "+esc(item.description):
+"بدون وصف"}
+</p>
+
+<p>
+${item.is_available?
+"🟢 ظاهر للزبائن":
+"🔴 مخفي عن الزبائن"}
+</p>
+
+<div class="row">
+
+<button onclick="editItem('${item.id}')">
+✏️ تعديل
+</button>
+
+<button
+class="${item.is_available?'red':'green'}"
+onclick="toggleItem('${item.id}',${item.is_available})">
+
+${item.is_available?
+"👁️ إخفاء":
+"👁️ إظهار"}
+
+</button>
+
+</div>
+
+<button class="red"
+onclick="deleteItem('${item.id}')">
+🗑️ حذف نهائي
+</button>
+
+</div>
+
+`).join("");
+
+}
+
+async function addItem(){
+
+const name=document.getElementById("name").value.trim();
+
+const price=Number(document.getElementById("price").value);
+
+const description=
+document.getElementById("description").value.trim();
+
+if(!name){
+
+alert("اكتب اسم الصنف");
+
+return;
+}
+
+if(!price || price<0){
+
+alert("اكتب السعر");
+
+return;
+}
+
+const {error}=await db
+.from("menu_items")
+.insert({
+cafe_id:CAFE_ID,
+name:name,
+price:price,
+description:description,
+is_available:true
+});
+
+if(error){
+
+alert("حدث خطأ: "+error.message);
+
+return;
+}
+
+document.getElementById("name").value="";
+document.getElementById("price").value="";
+document.getElementById("description").value="";
+
+document.getElementById("message").className="success";
+
+document.getElementById("message").textContent=
+"تمت إضافة الصنف بنجاح ✅";
+
+loadItems();
+
+}
+
+async function editItem(id){
+
+const item=items.find(x=>x.id===id);
+
+if(!item)return;
+
+const name=prompt(
+"اسم الصنف:",
+item.name
+);
+
+if(name===null)return;
+
+const price=prompt(
+"السعر:",
+item.price
+);
+
+if(price===null)return;
+
+const description=prompt(
+"الوصف:",
+item.description||""
+);
+
+if(description===null)return;
+
+if(!name.trim() || isNaN(Number(price))){
+
+alert("البيانات غير صحيحة");
+
+return;
+}
+
+const {error}=await db
+.from("menu_items")
+.update({
+name:name.trim(),
+price:Number(price),
+description:description.trim()
+})
+.eq("id",id)
+.eq("cafe_id",CAFE_ID);
+
+if(error){
+
+alert("حدث خطأ: "+error.message);
+
+return;
+}
+
+alert("تم تعديل الصنف ✅");
+
+loadItems();
+
+}
+
+async function toggleItem(id,current){
+
+const {error}=await db
+.from("menu_items")
+.update({
+is_available:!current
+})
+.eq("id",id)
+.eq("cafe_id",CAFE_ID);
+
+if(error){
+
+alert("حدث خطأ: "+error.message);
+
+return;
+}
+
+loadItems();
+
+}
+
+async function deleteItem(id){
+
+const item=items.find(x=>x.id===id);
+
+if(!item)return;
+
+const ok=confirm(
+"هل تريد حذف «"+item.name+"» نهائياً؟"
+);
+
+if(!ok)return;
+
+const {error}=await db
+.from("menu_items")
+.delete()
+.eq("id",id)
+.eq("cafe_id",CAFE_ID);
+
+if(error){
+
+alert(
+"لم يتم الحذف. قد يكون الصنف مرتبطاً بطلبات سابقة."
+);
+
+return;
+}
+
+alert("تم حذف الصنف 🗑️");
+
+loadItems();
+
+}
+
+function esc(value){
+
+return String(value??"")
+.replace(/&/g,"&amp;")
+.replace(/</g,"&lt;")
+.replace(/>/g,"&gt;")
+.replace(/"/g,"&quot;")
+.replace(/'/g,"&#039;");
+
+}
+
+checkLogin();
+
+</script>
+
+</body>
+</html>
